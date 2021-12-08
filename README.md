@@ -28,7 +28,7 @@ This lab requires a processor on x86-64 ISA.
 
 ## Background
 
-Instruction-level parallelism enables the processor to execute many instructions at once. Consider a baseline system, a  single issue MIPS architecture that has five stages: IF, ID, EXE, MEM and WB. Pipelining allows the processor to accomodate many instructions at once. It segments each instruction into different stages. It enables something like this:
+Instruction-level parallelism enables the processor to execute many instructions at once. Consider a baseline system, a  single issue MIPS architecture that has five stages: IF, ID, EXE, MEM and WB. Pipelining allows the processor to accommodate many instructions at once. It segments each instruction into different stages. It enables something like this:
 
 ```
 IF  ID  EXE MEM WB
@@ -90,7 +90,7 @@ On Odin, this benchmark takes a user time of 0.042 seconds--not even an improvem
 #pragma GCC unroll n
 ```
 
-will cause `gcc` to do it for you, where `n` is the number of times to unroll the loop. This pragma must be inserted just before the loop. Insert this line of code above line 11. However, we have a quandry with the lab. Using `#pragma GCC unroll n` requires an optimization flag of `-O2` or higher and we are using `-O0`. If you enable `-O2`, `gcc` will realize you are not doing any real work on the arrays and opt to not run your `for` loop *at all*. So, we cannot really demonstrate it for the purposes of this lab. We will not be content with letting the compiler do it for us, because we should be getting a much better improvement.
+will cause `gcc` to do it for you, where `n` is the number of times to unroll the loop. This pragma must be inserted just before the loop. Insert this line of code above line 11. However, we have a quandary with the lab. Using `#pragma GCC unroll n` requires an optimization flag of `-O2` or higher and we are using `-O0`. If you enable `-O2`, `gcc` will realize you are not doing any real work on the arrays and opt to not run your `for` loop *at all*. So, we cannot really demonstrate it for the purposes of this lab. We will not be content with letting the compiler do it for us, because we should be getting a much better improvement.
 
 ## Unroll by hand at the C-level
 
