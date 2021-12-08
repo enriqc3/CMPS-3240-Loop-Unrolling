@@ -1,7 +1,22 @@
 FLAGS=-O0 -Wall
 CC=gcc
 
-all: rolled.out
+all: rolled.out unrolled1.out unrolled2.out
 
 rolled.out: rolled.c
 	${CC} ${FLAGS} -o $@ $^
+
+unrolled1.out: rolled.c
+	${CC} ${FLAGS} -funroll-loops -o $@ $^
+
+unrolled2.out: unroll2.c
+	${CC} ${FLAGS} -o $@ $^
+
+unrolled3.s: rolled.c
+	${CC} ${FLAGS} -S -o $@ $^
+
+unrolled3.out: unrolled3.s
+	${CC} ${FLAGS} -o $@ $^
+
+clean: 
+	rm -r -f *.o *.out

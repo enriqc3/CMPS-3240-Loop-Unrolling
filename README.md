@@ -58,43 +58,201 @@ Thus, with current x86 processors, your chip has possibly been executing multipl
 * Given that the processor is multi-issue, it will saturate unused pipelines, increasing throughput. This is a linear improvement based on the number of times you unroll the loop body, limited by the number of pipes in the processor.
 * As a secondary benefit, it will decrease the number of pre- or post-test operations for the loop. E.g., If your loop body is doing two units of work, there are half as many tests to check if you should exit the loop. This reduces the penalty for incorrect guesses during branch speculation. However, due to modern processor's branch table buffer, this will likely be super neglible.
 
-### A simple example
+### Automatic loop unrolling with `gcc`
 
-Consider the code in `rolled.c` in this repo. On the departmental server execute the following commands to respectively compile the code and generate assembly code:
+Consider the code in `rolled.c` in this repo. The algorithm should be familiar to you at this point:
 
-```shell
-gcc -Wall -O0 -o rolled.out rolled.c
+```c
+for( int i = 0; i < length; i++ ) {
+	c[i] = a[i] * b[i];
+}
 ```
 
-This skips our intermediate step of compiling an unlinked binary. When timing this on my local Windows machine using WSL2 Debian I get the following result:
+On the departmental server execute the following commands to respectively compile the code and generate assembly code:
 
 ```shell
-$ time ./rolled.out
-real    0m1.840s
-user    0m0.734s
-sys     0m1.109s
+$ gcc -Wall -O0 -o rolled.out rolled.c
 ```
 
-`gcc` has an option to unroll loops and recursive functions automatically for us. The flag is `-funroll-all-loops`, and there are compiler specific pragmas that can provide hints to the compiler for when to attempt to unroll a loop. However, as we have learned throughout the class, the compiler generally does a bad job. When doing the automatic unrolling by the compiler I get:
+This skips our intermediate step of compiling an unlinked binary. The makefile target `make rolled.out` will handle this for you. When timing this on my local Windows machine using WSL2 Debian I get an average of 0.823 seconds.
+
+`gcc` has an option to unroll loops and recursive functions automatically for us. The flag is `-funroll-all-loops`. For example:
 
 ```shell
-$ time ./example1.out
-real    0m1.071s
-user    0m0.820s
-sys     0m0.248s
+$ gcc -O0 -Wall -funroll-loops -o unrolled1.out rolled.c
 ```
 
-Don't waste time here trying to investigate `-funroll-all-loops`, it's just an example. It's disappointing. There are indeed specific cases where there compiler will help loop unrolling in production, but if you want to optimize a task generally you will need to implement it.
+When I run this on my local machine I get worse performance. There are compiler specific pragmas that can provide hints to the compiler for when to attempt to unroll a loop. For example, if you want the compiler to unroll the loop the pragma:
 
-The goal of this lab is to demonstrate that it is indeed possible to observe an improvement in performance if you loop unroll by hand. 
+```c
+#pragma GCC unroll n
+```
 
-## Unrolling at the C-level
+will cause `gcc` to do it for you. This pragma must be inserted just before the loop. Insert this line of code above line 11. However, we have a quandry with the lab. Using `#pragma GCC unroll n` requires an optimization flag of `-O2` or higher and we are using `-O0`. If you enable `-O2` `gcc` will realize you are not doing any real work on the arrays and opt to not run your `for` loop at all. So, we cannot really demonstrate it for the purposes of this lab. But, this point is most likely where you would use unrolling in production. We will not be content with letting the compiler do it for us, because we should be getting a much better improvement.
 
-The easiest way to do this is to just cut-and-paste the loop body multiple times in a high-level language. Look at `unroll2.c`.
+## Unroll by hand at the C-level
 
-## Trivia - The sinking of the Itanic
+The easiest way to do this is to just cut-and-paste the loop body multiple times in a high-level language. Look at `unroll2.c`. It literally cuts and pastes the work of the loop body:
 
-In 1989, HP partnered with Intel to develop a static multi-issue server processor architecture, which they called Explicitly Parallel Instruction Computing (EPIC). Development culiminated in the Intel Itanium architecture (IA64), released in 2001.<sup>1</sup> It was a separate ISA from x86, i.e. x86 code and IA64 code are not compatible. This required developers to ship separate solutions for x86 and IA64. Few IA64 processors were sold, and software availability remained limited. Prolonged, slow development resulted in the Itanium processor being slower than comparable x86 processors of the same generation. It never took off, and the final Itanium chips were released in 2017 with support ending in 2021.<sup>2</sup> Developers gave this processor the nickname Itanic because it was anticipated to sink.3 At the time, AMD and Intel were competing for a way to increment 32-bit x86 processors into the realm of 64-bit. With IA64, Intel bet on static multi-issue, and tried to cause a paradigm shift. As an alternative, AMD provided a backward compatible 64-bit iteration of x86 called AMD64. This was released with their 2003 Opteron CPU. Developers favored the later, most likely due to backward compatability and ease of transitioning to AMD64. Currently AMD-64 is synonymous with x86-64. 
+```c
+for( int i = 0; i < length; i+=2 ) {
+	c[i] = a[i] * b[i];
+	c[i+1] = a[i+1] * b[i+1];
+}
+```
+
+This seems like it won't improve things. But, remember, that under the hood the processor has multiple issue paths. The work for `i` and `i+1` are separate workloads that get processed in parallel by our dynamic multi-issue processor. Compile this with:
+
+```shell
+$ gcc -O0 -Wall -o unrolled2.out unroll2.c
+```
+
+or use the `make unrolled2.out` target. On my machine I get an average of 0.815 seconds, compared to the baseline of 0.823, which is a roughly 1% improvement. TODO: Get real numbers 
+
+## Approach
+
+Before we get started we need to confirm the list of registers that are unsaved. Unrolling assembly requires a lot of registers, and you need to know which ones you can use. You cannot use just any register because of the concept of a register being saved or unsaved. The list of unsaved registers in x86-64 System V ABI are: 
+
+* RAX
+* RCX
+* RDX
+* RSI
+* RDI
+* R8
+* R9
+* R10
+* R11
+
+The R registers are weird. Referencing the whole register refers to the 64-bit version of the register. Usually, changing the R to an E refers to the lower 32-bits of the 64-bit register--what you need for integer. For example `%eax` vs. `%rax`. However, with R8 and beyond, you put a suffix lower case D at the end to indicate you are using the 32-bit version of the register. For example `%r8` vs. `%r8d`. I don't know why they did this, it's just the way it is.
+
+### Getting started
+
+As a first step, create assembly source for your approach. You should start with `rolled.c`:
+
+```shell
+$ gcc -O0 -Wall -S -o unrolled3.s rolled.c
+```
+
+or use the `make unrolled3.s` target. Be careful to not run this target again over the course of this lab it may destroy your work. *Do not use the C-side code for this. You must restart at rolled.c*  In the following, we step through `unrolled3.s` and implement a second iteration of the loop body. A major flaw of the C-side implementation is that the pointer math is recalculated. That is, `a[i] = b[i] * b[i];` is fully executed pointer math and all, then `a[i+1] = b[i+1] * b[i+1];`. Yet, when calculating the pointer for `a[i]`, you could also calculate `a[i+1]` by adding 4 bytes to the pointer to `a[i]`, and so on with the other pointer, without needing to reload `i`, promote it with `clt`, etc. 
+
+The general goals of what we will do are to:
+
+* Locate where [i] is dereferenced and dereference [i+1].
+* Add additional arithmetic for the [i+1] operations.
+* Change the counter to increment `i+=2` since the loop body does two loads of work instead of one.
+
+### Dereferencing `a[i+1]`
+
+First, look at lines 22 through 34. These calls to `malloc` are performed in order, so `a` should be in `-16(%rbp)`. `b` should be in `-24(%rbp)`. `c` should be in `-32(%rbp)`. Consider this code, roughly at about line 32:
+
+```x86
+movl	-4(%rbp), %eax
+cltq
+leaq	0(,%rax,4), %rdx
+movq	-16(%rbp), %rax
+addq	%rdx, %rax
+movl	(%rax), %ecx
+```
+
+`-4(%rbp)` is `i`.  Recall the way the compiler performs pointer math is to calculate `*(x + 4 * i)` to get the exact byte offset needed to find element `i`. In `leaq	0(,%rax,4), %rdx`, `0(,%rax,4)` evaluates to `%rax * 4` and stores the result in `%rdx`. `movq	-16(%rbp), %rax` then adds `-16(%rbp)` to the result of the previous calculation, which causes `%rax` to point to `x[i]`. Finally, `movl	(%rax), %ecx` dereferences the pointer to get the value of `x[i]`. 
+
+This is the point where we need to also dereference `x[i+1]`. We can add four bytes to `(%rax)` to get `i+1` by simply adding four: `4(%rax)`. Change this chunk to:
+
+```x86
+movl	-4(%rbp), %eax
+cltq
+leaq	0(,%rax,4), %rdx
+movq	-16(%rbp), %rax
+addq	%rdx, %rax
+movl	(%rax), %ecx
+movl	4(%rax), %r8d # This is new.
+```
+
+`movl	4(%rax), %r8d` dereferences `x[i+1]` and places the result into `%r8d`. Why `%r8`, you might ask? If you look forward, it looks like the compiler is already using `%rax`, `%rcx`, `%rdx`, and `%rsi` for scratch work. We will not want to interfere with this logic and had to select a register not being used by any existing code.
+
+### Dereferencing `b[i+1]`
+
+The code to calculate and dereference `y[i+1]` is:
+
+```x86
+movl	-4(%rbp), %eax
+cltq
+leaq	0(,%rax,4), %rdx
+movq	-24(%rbp), %rax
+addq	%rdx, %rax
+movl	(%rax), %eax
+```
+
+This does the same thing as the previous section, except `-24(%rbp)` is the pointer to `b`. Go ahead and dereference `i+1` on `b` as we did with the previous section. Remember to place it in another register.
+
+```x86
+movl	-4(%rbp), %eax
+cltq
+leaq	0(,%rax,4), %rdx
+movq	-24(%rbp), %rax
+addq	%rdx, %rax
+movl	(%rax), %eax
+movl	4(%rax), %r9d # This is new.
+```
+
+### Add and store in `c[i+1]`
+
+The final step is to calculate the pointer to `c`, do the math of adding `a` and `b`, then store the result in `c`. 
+
+```x86
+movl	-4(%rbp), %edx
+movslq	%edx, %rdx
+leaq	0(,%rdx,4), %rsi
+movq	-32(%rbp), %rdx
+addq	%rsi, %rdx
+imull	%ecx, %eax
+movl	%eax, (%rdx)
+```
+
+This instruction `movq	-32(%rbp), %rdx` calculates `c[i]`. So after this point, `%rdx` should point to `c[i]`. `imull	%ecx, %eax` multiplies `a[i]` and `b[i]`. If you look back to previous work the compiler was careful to not clobber the values in `%ecx` and `%eax`. So too have we been careful to not reuse `%r8d` and `%r9d` for some other purpose. It should hold `a[i+1]` and `b[i+1]` respectively. So, we need to multiply `%r8d` and `%r9d` then store the result in `4(%rdx)`:
+
+```x86
+movl	-4(%rbp), %edx
+movslq	%edx, %rdx
+leaq	0(,%rdx,4), %rsi
+movq	-32(%rbp), %rdx
+addq	%rsi, %rdx
+imull	%ecx, %eax
+movl	%eax, (%rdx)
+imull	%r8d, %r9d # New
+movl	%r9d, 4(%rdx) # New
+```
+
+### `i += 2`
+
+Just as with SIMD, each loop body is doing N workloads. The original version of the code increments the counter by one with `i++`. This is:
+
+```x86
+addl	$1, -4(%rbp)
+```
+
+If we want to do `i+=2` just change the literal to `$2`:
+
+```x86
+addl	$2, -4(%rbp)
+```
+
+Forgetting to do this is a common mistake. It will prevent you from seeing any performance improvement.
+
+
+### Bringing it together
+
+After implementing all of the above changes, you can create the unrolled solution with:
+
+```shell
+$ gcc -O0 -Wall -o unrolled3.out unrolled3.s
+```
+
+or use the `make unrolled3.out` target. 
+
+## Check-off
+
+Implement the code above and submit your modified `unrolled3.s` file.
 
 ## References
 
