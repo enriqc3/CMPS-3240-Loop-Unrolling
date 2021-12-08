@@ -28,7 +28,7 @@ This lab requires a processor on x86-64 ISA.
 
 ## Background
 
-Instruction-level parallelism is a method for parallelism that enables the processor to execute many instructions at once. First, consider a baseline system, a simple pipelined MIPS architecture that has five stages: IF, ID, EXE, MEM and WB. Pipelining allows the processor to accomodate many instructions at once by segmenting the pipeline into many stages. Considering our simple MIPS processor, it enables something like this:
+Instruction-level parallelism enables the processor to execute many instructions at once. Consider a baseline system, a  single issue MIPS architecture that has five stages: IF, ID, EXE, MEM and WB. Pipelining allows the processor to accomodate many instructions at once. It segments each instruction into different stages. It enables something like this:
 
 ```
 IF  ID  EXE MEM WB
@@ -38,7 +38,7 @@ IF  ID  EXE MEM WB
                 IF  ID  EXE MEM WB
 ```
 
-With multi-issue processors take that pipeline (which has many stages) and repeat it many times. In practice, this means that pipeline stages can accommodate more than one instruction at once. Considering a two-issue MIPS pipeline, it would like look so:
+Multi-issue processors can initiate more than one instruction in the IF stage. Pipeline stages can accommodate more than one instruction at once. A two-issue MIPS pipeline looks like this:
 
 ```
 IF  ID  EXE MEM WB
@@ -51,12 +51,14 @@ IF  ID  EXE MEM WB
             IF  ID  EXE MEM WB
 ```
 
-And so on. Multi-issue processors fall into one of two categories: static multi-issue and dynamic multi-issue. Modern microprocessors are dynamic-multi issue processors. That is, there are many pipelines in the processor and the processor is responsible for arranging given instructions into issue packets that do not have hazards. Processors may even go so far as to hold back certain instructions and execute them out of order to prevent hazards. The alternative is called static multi-issue processors, where the responsibility for generating issue packets is on the compiler and the coder.
+Multi-issue processors fall into one of two categories: static multi-issue and dynamic multi-issue. Modern microprocessors are dynamic multi-issue processors. With dynamic multi-issue the processor is responsible for arranging given instructions into issue packets that do not have hazards. Processors may even go so far as to hold back certain instructions and execute them out of order to prevent hazards. The alternative is called static multi-issue processors, where the responsibility for generating issue packets is on the compiler and the coder.
 
-Thus, with current x86 processors, your chip has possibly been executing multiple instructions at once in a given cycle, perhaps without your knowledge. Dynamic multi-issue processors go hand in hand with a technique called instruction level parallelism, or loop unrolling. With knowledge that the processor may have many many pipelines, it makes sense to saturate these pipelines. With loop unrolling, if there is a linear load of work (such as a for loop), repeat the loop body a certain amount of times. This has two benefits:
+With modern processors, your microprocessor has been executing multiple instructions at once in a given cycle. Dynamic multi-issue processors go hand in hand with a technique called instruction level parallelism, or loop unrolling. With knowledge that the processor may have many many pipelines, loop unrolling tries to saturate these pipelines. With loop unrolling, if there is a linear load of work (such as a `for` loop), repeat the loop body a certain amount of times. For example, if you had an array multiplication algorithm, without loop unrolling the loop body would operate on index `i`. With loop unrolling, the loop body would operate on `i` and `i+1`. This has two benefits:
 
 * Given that the processor is multi-issue, it will saturate unused pipelines, increasing throughput. This is a linear improvement based on the number of times you unroll the loop body, limited by the number of pipes in the processor.
 * As a secondary benefit, it will decrease the number of pre- or post-test operations for the loop. E.g., If your loop body is doing two units of work, there are half as many tests to check if you should exit the loop. This reduces the penalty for incorrect guesses during branch speculation. However, due to modern processor's branch table buffer, this will likely be super neglible.
+
+This is similar to SIMD. However, with SIMD, you are executing a single hardware-level instruction that does multiple workloads. Here, we are explicitly forcing the processor to execute multiple sets of instructions that are not SIMD. They are different concepts, and we will combine them in a later lab.
 
 ### Automatic loop unrolling with `gcc`
 
