@@ -74,7 +74,7 @@ On the departmental server execute the following commands to respectively compil
 $ gcc -Wall -O0 -o rolled.out rolled.c
 ```
 
-This skips our intermediate step of compiling an unlinked binary. The makefile target `make rolled.out` will handle this for you. When timing this on my local Windows machine using WSL2 Debian I get an average of 0.823 seconds.
+This skips our intermediate step of compiling an unlinked binary. The makefile target `make rolled.out` will handle this for you. When timing this on Odin I get an average of 0.043 seconds.
 
 `gcc` has an option to unroll loops and recursive functions automatically for us. The flag is `-funroll-all-loops`. For example:
 
@@ -82,13 +82,13 @@ This skips our intermediate step of compiling an unlinked binary. The makefile t
 $ gcc -O0 -Wall -funroll-loops -o unrolled1.out rolled.c
 ```
 
-When I run this on my local machine I get worse performance. There are compiler specific pragmas that can provide hints to the compiler for when to attempt to unroll a loop. For example, if you want the compiler to unroll the loop the pragma:
+On Odin, this benchmark takes a user time of 0.042 seconds--not even an improvement. There are compiler specific pragmas that can provide hints to the compiler for when to attempt to unroll a loop. For example, if you want the compiler to unroll the loop the pragma:
 
 ```c
 #pragma GCC unroll n
 ```
 
-will cause `gcc` to do it for you. This pragma must be inserted just before the loop. Insert this line of code above line 11. However, we have a quandry with the lab. Using `#pragma GCC unroll n` requires an optimization flag of `-O2` or higher and we are using `-O0`. If you enable `-O2` `gcc` will realize you are not doing any real work on the arrays and opt to not run your `for` loop at all. So, we cannot really demonstrate it for the purposes of this lab. But, this point is most likely where you would use unrolling in production. We will not be content with letting the compiler do it for us, because we should be getting a much better improvement.
+will cause `gcc` to do it for you. This pragma must be inserted just before the loop. Insert this line of code above line 11. However, we have a quandry with the lab. Using `#pragma GCC unroll n` requires an optimization flag of `-O2` or higher and we are using `-O0`. If you enable `-O2` `gcc` will realize you are not doing any real work on the arrays and opt to not run your `for` loop at all. So, we cannot really demonstrate it for the purposes of this lab. We will not be content with letting the compiler do it for us, because we should be getting a much better improvement.
 
 ## Unroll by hand at the C-level
 
@@ -107,7 +107,7 @@ This seems like it won't improve things. But, remember, that under the hood the 
 $ gcc -O0 -Wall -o unrolled2.out unroll2.c
 ```
 
-or use the `make unrolled2.out` target. On my machine I get an average of 0.815 seconds, compared to the baseline of 0.823, which is a roughly 1% improvement. TODO: Get real numbers 
+or use the `make unrolled2.out` target. On my machine I get an average of 0.033 seconds, compared to the baseline of 0.043, which is a roughly 30% improvement. This point is most likely where you would use unrolling in production. However, since this is an assembly class we will want to see if we can do even better.
 
 ## Approach
 
@@ -254,14 +254,8 @@ After implementing all of the above changes, you can create the unrolled solutio
 $ gcc -O0 -Wall -o unrolled3.out unrolled3.s
 ```
 
-or use the `make unrolled3.out` target. 
+or use the `make unrolled3.out` target. When I run this benchmark it takes 0.009 seconds, compared to the 0.043 seconds for the baseline, it is a ~400% improvement. We expected x2 faster due to unrolling. We had even more computational savings due to avoiding recalculation of the pointer math. You should at least see *some* improvement. If you did not, check to make sure you're incrementing `i` by the correct amount.
 
 ## Check-off
 
 Implement the code above and submit your modified `unrolled3.s` file.
-
-## References
-
-<sup>1</sup>https://en.wikipedia.org/wiki/Itanium
-
-<sup>2</sup>https://arstechnica.com/gadgets/2017/05/intels-itanium-cpus-once-a-play-for-64-bit-servers-and-desktops-are-dead/
