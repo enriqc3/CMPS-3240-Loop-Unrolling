@@ -2,7 +2,7 @@
 #include <stdio.h>	// Used for printf() and scanf()
 
 int main( int argc, char** argv ) {
-	const int length = 200000000;
+	const int length = 10000000;
 	// Create two large arrays
 	int* a = (int*) malloc( sizeof(int) * length );
 	int* b = (int*) malloc( sizeof(int) * length );

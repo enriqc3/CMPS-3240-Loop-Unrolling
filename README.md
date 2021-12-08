@@ -191,9 +191,11 @@ cltq
 leaq	0(,%rax,4), %rdx
 movq	-24(%rbp), %rax
 addq	%rdx, %rax
-movl	(%rax), %eax
 movl	4(%rax), %r9d # This is new.
+movl	(%rax), %eax
 ```
+
+Note that We put it ahead of `movl	(%rax), %eax`. The compiler seems to have chosen `%eax` to hold the dereferenced value of `b[i]`. If you tried to dereference `%rax` the lower half would contain the value of `b[i]` and it would cause a segmentation fault. So, we need to insert our code before the clobbering happens.
 
 ### Add and store in `c[i+1]`
 
@@ -204,12 +206,16 @@ movl	-4(%rbp), %edx
 movslq	%edx, %rdx
 leaq	0(,%rdx,4), %rsi
 movq	-32(%rbp), %rdx
-addq	%rsi, %rdx
+addq	%rsi, %rdx # Pointer to c in %rdx
 imull	%ecx, %eax
 movl	%eax, (%rdx)
 ```
 
-This instruction `movq	-32(%rbp), %rdx` calculates `c[i]`. So after this point, `%rdx` should point to `c[i]`. `imull	%ecx, %eax` multiplies `a[i]` and `b[i]`. If you look back to previous work the compiler was careful to not clobber the values in `%ecx` and `%eax`. So too have we been careful to not reuse `%r8d` and `%r9d` for some other purpose. It should hold `a[i+1]` and `b[i+1]` respectively. So, we need to multiply `%r8d` and `%r9d` then store the result in `4(%rdx)`:
+The first half of the code, up to where I have inserted the comment in the snippet calculate the pointer to `c[i]`. Note that since this is an assignment, we do not need to dereference it's value. We intend to save into it, or clobber it. Reading it is not required to do this. 
+
+`imull	%ecx, %eax` multiplies `a[i]` and `b[i]`. If you look back to previous work the compiler was careful to not clobber the values in `%ecx` and `%eax`. It then stores the result into `c[i]` with `movl	%eax, (%rdx)`.
+
+So too have we been careful to not reuse `%r8d` and `%r9d` for some other purpose. It should hold `a[i+1]` and `b[i+1]` respectively. So, we need to multiply `%r8d` and `%r9d` then store the result in `4(%rdx)`:
 
 ```x86
 movl	-4(%rbp), %edx

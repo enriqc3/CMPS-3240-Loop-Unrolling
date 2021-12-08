@@ -13,7 +13,7 @@ main:
 	subq	$48, %rsp
 	movl	%edi, -36(%rbp)
 	movq	%rsi, -48(%rbp)
-	movl	$200000000, -8(%rbp)
+	movl	$1000000, -8(%rbp)
 	movl	-8(%rbp), %eax
 	cltq
 	salq	$2, %rax
@@ -48,8 +48,8 @@ main:
 	leaq	0(,%rax,4), %rdx
 	movq	-24(%rbp), %rax
 	addq	%rdx, %rax
+	movl	4(%rax), %r8d
 	movl	(%rax), %eax
-	movl	4(%rax), %r9d
 	
 	movl	-4(%rbp), %edx
 	movslq	%edx, %rdx
@@ -58,9 +58,8 @@ main:
 	addq	%rsi, %rdx
 	imull	%ecx, %eax
 	movl	%eax, (%rdx)
-	#imull	%r8d, %r9d
-	#movl	%r9d, 4(%rdx)
-	
+	imull	%r8d, %r9d # New
+	movl	%r9d, 4(%rdx) # New
 	addl	$2, -4(%rbp)
 .L2:
 	movl	-4(%rbp), %eax
