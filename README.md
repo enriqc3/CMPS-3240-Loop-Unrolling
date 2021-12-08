@@ -172,7 +172,7 @@ movl	4(%rax), %r8d # This is new.
 
 ### Dereferencing `b[i+1]`
 
-The code to calculate and dereference `y[i+1]` is:
+The code to calculate and dereference `b[i+1]` is:
 
 ```x86
 movl	-4(%rbp), %eax
