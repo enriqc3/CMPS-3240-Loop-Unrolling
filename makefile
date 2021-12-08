@@ -1,8 +1,6 @@
 FLAGS=-O0 -Wall
 CC=gcc
 
-all: rolled.out unrolled1.out unrolled2.out
-
 rolled.out: rolled.c
 	${CC} ${FLAGS} -o $@ $^
 
