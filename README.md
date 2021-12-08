@@ -38,7 +38,7 @@ IF  ID  EXE MEM WB
                 IF  ID  EXE MEM WB
 ```
 
-Multi-issue processors can initiate more than one instruction in the IF stage. Pipeline stages can accommodate more than one instruction at once. A two-issue MIPS pipeline looks like this:
+Multi-issue processors can initiate more than one instruction in the IF stage. A two-issue MIPS pipeline looks like this:
 
 ```
 IF  ID  EXE MEM WB
@@ -56,7 +56,7 @@ Multi-issue processors fall into one of two categories: static multi-issue and d
 With modern processors, your microprocessor has been executing multiple instructions at once in a given cycle. Dynamic multi-issue processors go hand in hand with a technique called instruction level parallelism, or loop unrolling. With knowledge that the processor may have many many pipelines, loop unrolling tries to saturate these pipelines. With loop unrolling, if there is a linear load of work (such as a `for` loop), repeat the loop body a certain amount of times. For example, if you had an array multiplication algorithm, without loop unrolling the loop body would operate on index `i`. With loop unrolling, the loop body would operate on `i` and `i+1`. This has two benefits:
 
 * Given that the processor is multi-issue, it will saturate unused pipelines, increasing throughput. This is a linear improvement based on the number of times you unroll the loop body, limited by the number of pipes in the processor.
-* As a secondary benefit, it will decrease the number of pre- or post-test operations for the loop. E.g., If your loop body is doing two units of work, there are half as many tests to check if you should exit the loop. This reduces the penalty for incorrect guesses during branch speculation. However, due to modern processor's branch table buffer, this will likely be super neglible.
+* As a secondary benefit, it will decrease the number of pre- or post-test operations for the loop. E.g., If your loop body is doing two units of work, there are half as many tests to check if you should exit the loop. This reduces the penalty for incorrect guesses during branch speculation. However, due to modern processor's branch table buffer, this is a single clock cycle improvement.
 
 This is similar to SIMD. However, with SIMD, you are executing a single hardware-level instruction that does multiple workloads. Here, we are explicitly forcing the processor to execute multiple sets of instructions that are not SIMD. They are different concepts, and we will combine them in a later lab.
 
@@ -70,7 +70,7 @@ for( int i = 0; i < length; i++ ) {
 }
 ```
 
-On the departmental server execute the following commands to respectively compile the code and generate assembly code:
+It is some variant of the AXPY problem. On the departmental server execute the following commands to compile and link this into our baseline program:
 
 ```shell
 $ gcc -Wall -O0 -o rolled.out rolled.c
@@ -78,19 +78,19 @@ $ gcc -Wall -O0 -o rolled.out rolled.c
 
 This skips our intermediate step of compiling an unlinked binary. The makefile target `make rolled.out` will handle this for you. When timing this on Odin I get an average of 0.043 seconds.
 
-`gcc` has an option to unroll loops and recursive functions automatically for us. The flag is `-funroll-all-loops`. For example:
+`gcc` has an option to unroll loops and recursive functions automatically. The flag is `-funroll-all-loops`. For example:
 
 ```shell
 $ gcc -O0 -Wall -funroll-loops -o unrolled1.out rolled.c
 ```
 
-On Odin, this benchmark takes a user time of 0.042 seconds--not even an improvement. There are compiler specific pragmas that can provide hints to the compiler for when to attempt to unroll a loop. For example, if you want the compiler to unroll the loop the pragma:
+On Odin, this benchmark takes a user time of 0.042 seconds--not even an improvement. There are compiler specific pragmas that provide hints to the compiler to unroll a loop. For example, if you want the compiler to unroll the loop the pragma:
 
 ```c
 #pragma GCC unroll n
 ```
 
-will cause `gcc` to do it for you. This pragma must be inserted just before the loop. Insert this line of code above line 11. However, we have a quandry with the lab. Using `#pragma GCC unroll n` requires an optimization flag of `-O2` or higher and we are using `-O0`. If you enable `-O2` `gcc` will realize you are not doing any real work on the arrays and opt to not run your `for` loop at all. So, we cannot really demonstrate it for the purposes of this lab. We will not be content with letting the compiler do it for us, because we should be getting a much better improvement.
+will cause `gcc` to do it for you, where `n` is the number of times to unroll the loop. This pragma must be inserted just before the loop. Insert this line of code above line 11. However, we have a quandry with the lab. Using `#pragma GCC unroll n` requires an optimization flag of `-O2` or higher and we are using `-O0`. If you enable `-O2`, `gcc` will realize you are not doing any real work on the arrays and opt to not run your `for` loop *at all*. So, we cannot really demonstrate it for the purposes of this lab. We will not be content with letting the compiler do it for us, because we should be getting a much better improvement.
 
 ## Unroll by hand at the C-level
 
@@ -109,11 +109,11 @@ This seems like it won't improve things. But, remember, that under the hood the 
 $ gcc -O0 -Wall -o unrolled2.out unroll2.c
 ```
 
-or use the `make unrolled2.out` target. On my machine I get an average of 0.033 seconds, compared to the baseline of 0.043, which is a roughly 30% improvement. This point is most likely where you would use unrolling in production. However, since this is an assembly class we will want to see if we can do even better.
+or use the `make unrolled2.out` target. On my machine I get an average of 0.033 seconds, compared to the baseline of 0.043, which is a roughly 30% improvement. This is most likely how you would use unrolling in your career. However, since this is an assembly class we will want to see if we can do even better. That means reverse assembling the C-code and optimizing at the assembly level.
 
 ## Approach
 
-Before we get started we need to confirm the list of registers that are unsaved. Unrolling assembly requires a lot of registers, and you need to know which ones you can use. You cannot use just any register because of the concept of a register being saved or unsaved. The list of unsaved registers in x86-64 System V ABI are: 
+Unrolling assembly requires a lot of registers. You cannot use just any register because of the concept of a register being saved or unsaved. We will want to use unsaved registers because saved requires require the complication of saving values onto the stack. The list of unsaved registers in x86-64 System V ABI are: 
 
 * RAX
 * RCX
@@ -135,7 +135,9 @@ As a first step, create assembly source for your approach. You should start with
 $ gcc -O0 -Wall -S -o unrolled3.s rolled.c
 ```
 
-or use the `make unrolled3.s` target. Be careful to not run this target again over the course of this lab it may destroy your work. *Do not use the C-side code for this. You must restart at rolled.c*  In the following, we step through `unrolled3.s` and implement a second iteration of the loop body. A major flaw of the C-side implementation is that the pointer math is recalculated. That is, `a[i] = b[i] * b[i];` is fully executed pointer math and all, then `a[i+1] = b[i+1] * b[i+1];`. Yet, when calculating the pointer for `a[i]`, you could also calculate `a[i+1]` by adding 4 bytes to the pointer to `a[i]`, and so on with the other pointer, without needing to reload `i`, promote it with `clt`, etc. 
+or use the `make unrolled3.s` target. Be careful to not run this target again over the course of this lab it may destroy your work. *Do not use the C-side code for this. You must restart at rolled.c*  In the following, we step through `unrolled3.s` and implement a second iteration of the loop body. 
+
+A major flaw of the C-side implementation is that the pointer math is recalculated. That is, `a[i] = b[i] * b[i];` is fully executed pointer math and all, then `a[i+1] = b[i+1] * b[i+1];`. Yet, when calculating the pointer for `a[i]`, you could also calculate `a[i+1]` by adding 4 bytes to the pointer to `a[i]`, and so on with the other pointer, without needing to reload `i`, promote it with `clt`, etc. 
 
 The general goals of what we will do are to:
 
@@ -156,9 +158,9 @@ addq	%rdx, %rax
 movl	(%rax), %ecx
 ```
 
-`-4(%rbp)` is `i`.  Recall the way the compiler performs pointer math is to calculate `*(x + 4 * i)` to get the exact byte offset needed to find element `i`. In `leaq	0(,%rax,4), %rdx`, `0(,%rax,4)` evaluates to `%rax * 4` and stores the result in `%rdx`. `movq	-16(%rbp), %rax` then adds `-16(%rbp)` to the result of the previous calculation, which causes `%rax` to point to `x[i]`. Finally, `movl	(%rax), %ecx` dereferences the pointer to get the value of `x[i]`. 
+`-4(%rbp)` is `i`.  Recall the way the compiler performs pointer math is to calculate `*(a + 4 * i)` to get the exact byte offset needed to find element `i`. In `leaq	0(,%rax,4), %rdx`, `0(,%rax,4)` evaluates to `%rax * 4` and stores the result in `%rdx`. `movq	-16(%rbp), %rax` then adds `-16(%rbp)` to the result of the previous calculation, which causes `%rax` to point to `a[i]`. Finally, `movl	(%rax), %ecx` dereferences the pointer to get the value of `a[i]`. 
 
-This is the point where we need to also dereference `x[i+1]`. We can add four bytes to `(%rax)` to get `i+1` by simply adding four: `4(%rax)`. Change this chunk to:
+This is the point where we need to also dereference `a[i+1]`. We can add four bytes to `(%rax)` to get `i+1` by simply adding four: `4(%rax)`. Change this chunk to:
 
 ```x86
 movl	-4(%rbp), %eax
@@ -170,7 +172,7 @@ movl	(%rax), %ecx
 movl	4(%rax), %r8d # This is new.
 ```
 
-`movl	4(%rax), %r8d` dereferences `x[i+1]` and places the result into `%r8d`. Why `%r8`, you might ask? If you look forward, it looks like the compiler is already using `%rax`, `%rcx`, `%rdx`, and `%rsi` for scratch work. We will not want to interfere with this logic and had to select a register not being used by any existing code.
+`movl	4(%rax), %r8d` dereferences `a[i+1]` and places the result into `%r8d`. Why `%r8`, you might ask? If you look forward, it looks like the compiler is already using `%rax`, `%rcx`, `%rdx`, and `%rsi` for scratch work. We do not want to interfere with this logic and must select a register not being used by any existing code.
 
 ### Dereferencing `b[i+1]`
 
@@ -197,7 +199,7 @@ movl	4(%rax), %r9d # This is new.
 movl	(%rax), %eax
 ```
 
-Note that We put it ahead of `movl	(%rax), %eax`. The compiler seems to have chosen `%eax` to hold the dereferenced value of `b[i]`. If you tried to dereference `%rax` the lower half would contain the value of `b[i]` and it would cause a segmentation fault. So, we need to insert our code before the clobbering happens.
+Note that We put it ahead of `movl	(%rax), %eax`. The compiler chose `%eax` to hold the dereferenced value of `b[i]`. If you tried to dereference `%rax` after this instruction the lower half would contain the value of `b[i]` and it would cause a segmentation fault. So, we need to insert our code before this clobbering happens.
 
 ### Add and store in `c[i+1]`
 
@@ -213,7 +215,7 @@ imull	%ecx, %eax
 movl	%eax, (%rdx)
 ```
 
-The first half of the code, up to where I have inserted the comment in the snippet calculate the pointer to `c[i]`. Note that since this is an assignment, we do not need to dereference it's value. We intend to save into it, or clobber it. Reading it is not required to do this. 
+The first half of the code, up to the comment calculates the pointer to `c[i]`. Since this is an assignment we do not need to dereference it's value. We intend to save into it, or clobber it.
 
 `imull	%ecx, %eax` multiplies `a[i]` and `b[i]`. If you look back to previous work the compiler was careful to not clobber the values in `%ecx` and `%eax`. It then stores the result into `c[i]` with `movl	%eax, (%rdx)`.
 
